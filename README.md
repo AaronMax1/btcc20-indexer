@@ -82,9 +82,14 @@ npm start
 
 ## Docker 部署
 
+Compose 默认会启动两个服务：
+
+- `btccd`：BTCC Core 节点，负责同步链和提供 RPC
+- `btcc20-indexer`：BTCC-20 索引器和浏览器
+
 先在服务器上准备好：
 
-- 已同步的 BTCC Core RPC
+- 能访问 `https://github.com/Marcus-Vane/Bitcoin-Classic`，Compose 会从源码构建 BTCC Core 镜像
 - 已编译的 `ord` 可执行文件，例如 `../btcc20-inscriber/target/release/ord`
 
 复制环境变量模板。Docker Compose 会自动读取项目目录下的 `.env`：
@@ -97,13 +102,16 @@ cp .env.example .env
 
 ```sh
 BTCC20_CHAIN=mainnet
-BTCC20_RPC_URL=http://host.docker.internal:28476
+BTCC20_RPC_URL=http://btccd:28476
 BTCC20_RPC_USER=你的RPC用户名
 BTCC20_RPC_PASSWORD=你的RPC密码
+BTCCD_REPO=https://github.com/Marcus-Vane/Bitcoin-Classic.git
+BTCCD_REF=main
+BTCCD_IMAGE=btcc-core:local
 BTCC20_ORD_HOST_PATH=/服务器上的/ord/路径
 ```
 
-构建镜像：
+构建镜像。节点镜像会从 `BTCCD_REPO` 拉源码；默认 `BTCCD_REF=main`，脚本会对 `btccd` 使用 `--no-cache`，避免 Docker 缓存旧源码：
 
 ```sh
 npm run docker:build
@@ -115,7 +123,20 @@ npm run docker:build
 docker compose up -d --build
 ```
 
-默认会把索引状态保存到 Docker volume `btcc20-indexer-data`，容器内路径是：
+如果 Bitcoin-Classic 上游更新了代码，建议先强制重建节点镜像：
+
+```sh
+docker compose build --no-cache btccd
+docker compose up -d --build
+```
+
+如果你想固定到 Bitcoin-Classic 的 release tag，可以把 `.env` 里的 `BTCCD_REF` 改成：
+
+```sh
+BTCCD_REF=v1.0.0
+```
+
+默认会把 BTCC Core 链数据保存到 Docker volume `btccd-data`，把索引状态保存到 Docker volume `btcc20-indexer-data`，索引器容器内路径是：
 
 ```text
 /data/index-state.json
@@ -125,6 +146,18 @@ docker compose up -d --build
 
 ```sh
 docker compose logs -f btcc20-indexer
+```
+
+查看节点日志：
+
+```sh
+docker compose logs -f btccd
+```
+
+如果你要连接服务器上已有的外部 BTCC Core，不想启动 Compose 里的节点，可以把 `BTCC20_RPC_URL` 改成外部地址，并只启动索引器：
+
+```sh
+docker compose up -d --build btcc20-indexer
 ```
 
 ## 环境变量

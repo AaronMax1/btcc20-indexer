@@ -1,14 +1,40 @@
 services:
+  btccd:
+    build:
+      context: .
+      dockerfile: Dockerfile.btccd
+      args:
+        BTCCD_REPO: ${BTCCD_REPO:-https://github.com/Marcus-Vane/Bitcoin-Classic.git}
+        BTCCD_REF: ${BTCCD_REF:-main}
+    image: ${BTCCD_IMAGE:-btcc-core:local}
+    restart: unless-stopped
+    command:
+      - -server=1
+      - -txindex=1
+      - -datadir=/data
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcport=${BTCCD_RPC_PORT:-28476}
+      - -rpcuser=${BTCC20_RPC_USER:-btcc_rpc_user}
+      - -rpcpassword=${BTCC20_RPC_PASSWORD:-change_me}
+    volumes:
+      - btccd-data:/data
+    ports:
+      - "${BTCCD_P2P_PORT:-8333}:8333"
+      - "${BTCCD_RPC_PUBLISH_PORT:-127.0.0.1:28476}:28476"
+
   btcc20-indexer:
     build:
       context: .
     image: btcc20-indexer:latest
     restart: unless-stopped
+    depends_on:
+      - btccd
     environment:
       BTCC20_CHAIN: ${BTCC20_CHAIN:-mainnet}
       BTCC20_VIEWER_HOST: 0.0.0.0
       BTCC20_VIEWER_PORT: 8798
-      BTCC20_RPC_URL: ${BTCC20_RPC_URL:-http://host.docker.internal:28476}
+      BTCC20_RPC_URL: ${BTCC20_RPC_URL:-http://btccd:28476}
       BTCC20_RPC_USER: ${BTCC20_RPC_USER:-btcc_rpc_user}
       BTCC20_RPC_PASSWORD: ${BTCC20_RPC_PASSWORD:-change_me}
       BTCC20_ORD: /usr/local/bin/ord
@@ -20,8 +46,7 @@ services:
     volumes:
       - btcc20-indexer-data:/data
       - ${BTCC20_ORD_HOST_PATH:-../btcc20-inscriber/target/release/ord}:/usr/local/bin/ord:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
 volumes:
+  btccd-data:
   btcc20-indexer-data:

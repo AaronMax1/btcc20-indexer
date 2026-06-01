@@ -20,7 +20,7 @@ services:
     volumes:
       - btccd-data:/data
     ports:
-      - "${BTCCD_P2P_PORT:-8333}:8333"
+      - "${BTCCD_P2P_PORT:-18465}:18465"
       - "${BTCCD_RPC_PUBLISH_PORT:-127.0.0.1:28476}:28476"
 
   btcc20-indexer:

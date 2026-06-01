@@ -96,6 +96,7 @@ BTCC20_RPC_PASSWORD=你的RPC密码
 BTCCD_REPO=https://github.com/Marcus-Vane/Bitcoin-Classic.git
 BTCCD_REF=main
 BTCCD_IMAGE=btcc-core:local
+BTCCD_P2P_PORT=18465
 ```
 
 构建镜像。节点镜像会从 `BTCCD_REPO` 拉源码；默认 `BTCCD_REF=main`，脚本会对 `btccd` 使用 `--no-cache`，避免 Docker 缓存旧源码：

@@ -60,6 +60,6 @@ COPY --from=builder /out/usr/local/bin/bitcoin-cli /usr/local/bin/bitcoin-cli
 
 USER btcc
 
-EXPOSE 8333 28476
+EXPOSE 18465 28476
 
 ENTRYPOINT ["bitcoind"]

@@ -1,0 +1,17 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.btccd
+      - -t
+      - gcr.io/$PROJECT_ID/btcc-core:asert
+      - .
+
+images:
+  - gcr.io/$PROJECT_ID/btcc-core:asert
+
+options:
+  machineType: E2_HIGHCPU_32
+
+timeout: 7200s

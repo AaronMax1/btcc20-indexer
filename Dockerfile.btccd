@@ -1,8 +1,5 @@
 FROM debian:bookworm-slim AS builder
 
-ARG BTCCD_REPO=https://github.com/Marcus-Vane/Bitcoin-Classic.git
-ARG BTCCD_REF=main
-
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     automake \
@@ -22,7 +19,11 @@ RUN apt-get update \
     python3 \
   && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth 1 --branch "$BTCCD_REF" "$BTCCD_REPO" /src
+ARG BTCCD_REPO=https://github.com/Marcus-Vane/Bitcoin-Classic.git
+ARG BTCCD_REF=feature/asert
+
+RUN git clone --depth 1 --branch "$BTCCD_REF" "$BTCCD_REPO" /src \
+  && git -C /src rev-parse HEAD
 
 WORKDIR /src
 

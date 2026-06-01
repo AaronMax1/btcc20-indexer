@@ -14,6 +14,7 @@ const config = {
   rpcPassword: process.env.BTCC20_RPC_PASSWORD || 'btcc20',
   indexIntervalMs: Number(process.env.BTCC20_INDEX_INTERVAL_MS || 15_000),
   reorgCheckDepth: Number(process.env.BTCC20_REORG_CHECK_DEPTH || 20),
+  indexBatchSize: Number(process.env.BTCC20_INDEX_BATCH_SIZE || 100),
 };
 
 async function rpc(method, params = []) {
@@ -56,6 +57,36 @@ async function rpcAuthed(method, params = []) {
   return payload.result;
 }
 
+async function rpcBatchAuthed(calls) {
+  if (!calls.length) return [];
+  const auth = Buffer.from(`${config.rpcUser}:${config.rpcPassword}`).toString('base64');
+  const response = await fetch(config.rpcUrl, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Basic ${auth}`,
+    },
+    body: JSON.stringify(calls.map((call, index) => ({
+      jsonrpc: '1.0',
+      id: index,
+      method: call.method,
+      params: call.params || [],
+    }))),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) throw new Error(`RPC batch HTTP ${response.status}`);
+  const payload = await response.json();
+  if (!Array.isArray(payload)) throw new Error('RPC batch failed: non-array response');
+
+  const byId = new Map(payload.map(item => [item.id, item]));
+  return calls.map((call, index) => {
+    const item = byId.get(index);
+    if (!item) throw new Error(`RPC batch ${call.method} missing response`);
+    if (item.error) throw new Error(`RPC batch ${call.method} failed: ${JSON.stringify(item.error)}`);
+    return item.result;
+  });
+}
+
 async function getTipHeight() {
   return config.rpcUser || config.rpcPassword
     ? rpcAuthed('getblockcount')
@@ -73,6 +104,27 @@ async function getBlock(height) {
   return config.rpcUser || config.rpcPassword
     ? rpcAuthed('getblock', [hash, 2])
     : rpc('getblock', [hash, 2]);
+}
+
+async function getBlocksRange(startHeight, endHeight) {
+  const heights = [];
+  for (let height = startHeight; height <= endHeight; height += 1) heights.push(height);
+
+  if (!config.rpcUser && !config.rpcPassword) {
+    const blocks = [];
+    for (const height of heights) blocks.push(await getBlock(height));
+    return blocks;
+  }
+
+  const hashes = await rpcBatchAuthed(heights.map(height => ({
+    method: 'getblockhash',
+    params: [height],
+  })));
+
+  return rpcBatchAuthed(hashes.map(hash => ({
+    method: 'getblock',
+    params: [hash, 2],
+  })));
 }
 
 function readIndex() {
@@ -98,6 +150,9 @@ const indexStatus = {
   last_reorg_at: null,
   last_reorg_height: null,
   tip: null,
+  scan_start_height: null,
+  scan_current_height: null,
+  scan_target_height: null,
 };
 
 let indexPromise = null;
@@ -365,39 +420,50 @@ async function scanBlocks(current, tip, force) {
   const startHeight = force || !current ? 0 : current.end_height + 1;
   if (startHeight > tip) return state;
 
+  indexStatus.scan_start_height = startHeight;
+  indexStatus.scan_current_height = startHeight - 1;
+  indexStatus.scan_target_height = tip;
+
+  const batchSize = Math.max(1, Math.min(config.indexBatchSize, 500));
   const locations = transferLocations(state.ledger);
-  for (let height = startHeight; height <= tip; height += 1) {
-    const block = await getBlock(height);
-    state.blocks.push({ height, hash: block.hash });
+  for (let batchStart = startHeight; batchStart <= tip; batchStart += batchSize) {
+    const batchEnd = Math.min(tip, batchStart + batchSize - 1);
+    const blocks = await getBlocksRange(batchStart, batchEnd);
 
-    for (const tx of block.tx || []) {
-      const owner = firstOutputAddress(tx);
-      for (const input of tx.vin || []) {
-        const previous = input.txid === undefined ? null : `${input.txid}:${input.vout}`;
-        const inscription = previous ? locations.get(previous) : null;
-        if (inscription && owner) {
-          locations.delete(previous);
-          const event = applyTransferSpend(state.ledger, inscription, owner);
-          state.events.push({ height, txid: tx.txid, inscription, owner, valid: event.valid, reason: event.reason, payload: null });
-        }
-      }
+    for (const [offset, block] of blocks.entries()) {
+      const height = batchStart + offset;
+      state.blocks.push({ height, hash: block.hash });
 
-      if (!owner) continue;
-      for (const [inputIndex, input] of (tx.vin || []).entries()) {
-        for (const envelope of envelopesFromWitness(input.txinwitness, inputIndex)) {
-          const payload = parseInscriptionPayload(envelope.payload);
-          if (!payload) continue;
-          const inscription = `${tx.txid}i${envelope.offset}`;
-          const event = applyInscription(state.ledger, inscription, owner, payload);
-          if (event.valid && payload.operation.op === 'transfer') {
-            locations.set(`${tx.txid}:0`, inscription);
+      for (const tx of block.tx || []) {
+        const owner = firstOutputAddress(tx);
+        for (const input of tx.vin || []) {
+          const previous = input.txid === undefined ? null : `${input.txid}:${input.vout}`;
+          const inscription = previous ? locations.get(previous) : null;
+          if (inscription && owner) {
+            locations.delete(previous);
+            const event = applyTransferSpend(state.ledger, inscription, owner);
+            state.events.push({ height, txid: tx.txid, inscription, owner, valid: event.valid, reason: event.reason, payload: null });
           }
-          state.events.push({ height, txid: tx.txid, inscription, owner, valid: event.valid, reason: event.reason, payload });
+        }
+
+        if (!owner) continue;
+        for (const [inputIndex, input] of (tx.vin || []).entries()) {
+          for (const envelope of envelopesFromWitness(input.txinwitness, inputIndex)) {
+            const payload = parseInscriptionPayload(envelope.payload);
+            if (!payload) continue;
+            const inscription = `${tx.txid}i${envelope.offset}`;
+            const event = applyInscription(state.ledger, inscription, owner, payload);
+            if (event.valid && payload.operation.op === 'transfer') {
+              locations.set(`${tx.txid}:0`, inscription);
+            }
+            state.events.push({ height, txid: tx.txid, inscription, owner, valid: event.valid, reason: event.reason, payload });
+          }
         }
       }
-    }
 
-    state.end_height = height;
+      state.end_height = height;
+      indexStatus.scan_current_height = height;
+    }
   }
 
   return state;
@@ -522,6 +588,9 @@ async function updateIndex({ force = false } = {}) {
       })
       .finally(() => {
         indexStatus.running = false;
+        indexStatus.scan_start_height = null;
+        indexStatus.scan_current_height = null;
+        indexStatus.scan_target_height = null;
         indexPromise = null;
       });
   }

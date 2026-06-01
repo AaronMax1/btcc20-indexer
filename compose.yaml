@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile.btccd
       args:
         BTCCD_REPO: ${BTCCD_REPO:-https://github.com/Marcus-Vane/Bitcoin-Classic.git}
-        BTCCD_REF: ${BTCCD_REF:-main}
+        BTCCD_REF: ${BTCCD_REF:-feature/asert}
     image: ${BTCCD_IMAGE:-btcc-core:local}
     restart: unless-stopped
     command:
@@ -17,6 +17,9 @@ services:
       - -rpcport=${BTCCD_RPC_PORT:-28476}
       - -rpcuser=${BTCC20_RPC_USER:-btcc_rpc_user}
       - -rpcpassword=${BTCC20_RPC_PASSWORD:-change_me}
+      - -dnsseed=${BTCCD_DNSSEED:-0}
+      - -fixedseeds=${BTCCD_FIXEDSEEDS:-0}
+      - -connect=${BTCCD_CONNECT:-43.163.236.59:18465}
     volumes:
       - btccd-data:/data
     ports:

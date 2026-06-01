@@ -94,12 +94,13 @@ BTCC20_RPC_URL=http://btccd:28476
 BTCC20_RPC_USER=你的RPC用户名
 BTCC20_RPC_PASSWORD=你的RPC密码
 BTCCD_REPO=https://github.com/Marcus-Vane/Bitcoin-Classic.git
-BTCCD_REF=main
+BTCCD_REF=feature/asert
 BTCCD_IMAGE=btcc-core:local
 BTCCD_P2P_PORT=18465
+BTCCD_CONNECT=43.163.236.59:18465
 ```
 
-构建镜像。节点镜像会从 `BTCCD_REPO` 拉源码；默认 `BTCCD_REF=main`，脚本会对 `btccd` 使用 `--no-cache`，避免 Docker 缓存旧源码：
+构建镜像。节点镜像会从 `BTCCD_REPO` 拉源码；默认 `BTCCD_REF=feature/asert`，脚本会对 `btccd` 使用 `--no-cache`，避免 Docker 缓存旧源码：
 
 ```sh
 npm run docker:build
@@ -160,7 +161,14 @@ docker compose up -d --build btcc20-indexer
 | `BTCC20_RPC_PASSWORD` | RPC 密码 | `btcc20` |
 | `BTCC20_INDEX_FILE` | 索引状态文件 | `data/index-state.json` |
 | `BTCC20_INDEX_INTERVAL_MS` | 自动更新间隔 | `15000` |
+| `BTCC20_INDEX_BATCH_SIZE` | 首次扫描时每批 RPC 区块数量，最大按 `500` 限制 | `100` |
 | `BTCC20_REORG_CHECK_DEPTH` | 重组检查深度 | `20` |
+| `BTCCD_REPO` | Compose 内置 BTCC Core 源码仓库 | `https://github.com/Marcus-Vane/Bitcoin-Classic.git` |
+| `BTCCD_REF` | Compose 内置 BTCC Core 源码分支或 tag | `feature/asert` |
+| `BTCCD_CONNECT` | BTCC Core 固定连接 peer，用于避免随机 peer 不出块导致同步停住 | `43.163.236.59:18465` |
+| `BTCCD_P2P_PORT` | BTCC Core P2P 端口映射 | `18465` |
+| `BTCCD_RPC_PORT` | BTCC Core 容器内 RPC 端口 | `28476` |
+| `BTCCD_RPC_PUBLISH_PORT` | BTCC Core RPC 发布到宿主机的地址 | `127.0.0.1:28476` |
 
 ## API
 

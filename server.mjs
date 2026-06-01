@@ -197,7 +197,15 @@ function clientState(state) {
 }
 
 async function updateIndex({ force = false } = {}) {
-  const tip = await getTipHeight();
+  let tip;
+  try {
+    tip = await getTipHeight();
+  } catch (error) {
+    indexStatus.last_error = String(error?.message || error);
+    indexStatus.last_checked_at = new Date().toISOString();
+    throw error;
+  }
+
   const current = readIndex();
   indexStatus.tip = tip;
   indexStatus.last_checked_at = new Date().toISOString();

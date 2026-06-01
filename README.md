@@ -80,6 +80,53 @@ BTCC20_ORD=../btcc20-inscriber/target/debug/ord \
 npm start
 ```
 
+## Docker 部署
+
+先在服务器上准备好：
+
+- 已同步的 BTCC Core RPC
+- 已编译的 `ord` 可执行文件，例如 `../btcc20-inscriber/target/release/ord`
+
+复制环境变量模板。Docker Compose 会自动读取项目目录下的 `.env`：
+
+```sh
+cp .env.example .env
+```
+
+编辑 `.env`，至少设置：
+
+```sh
+BTCC20_CHAIN=mainnet
+BTCC20_RPC_URL=http://host.docker.internal:28476
+BTCC20_RPC_USER=你的RPC用户名
+BTCC20_RPC_PASSWORD=你的RPC密码
+BTCC20_ORD_HOST_PATH=/服务器上的/ord/路径
+```
+
+构建镜像：
+
+```sh
+npm run docker:build
+```
+
+或直接用 Docker Compose 启动：
+
+```sh
+docker compose up -d --build
+```
+
+默认会把索引状态保存到 Docker volume `btcc20-indexer-data`，容器内路径是：
+
+```text
+/data/index-state.json
+```
+
+查看日志：
+
+```sh
+docker compose logs -f btcc20-indexer
+```
+
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |

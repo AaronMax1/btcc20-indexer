@@ -4,7 +4,8 @@
   "private": false,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "docker:build": "sh scripts/docker-build.sh"
   },
   "dependencies": {}
 }

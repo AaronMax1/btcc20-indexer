@@ -1,0 +1,27 @@
+services:
+  btcc20-indexer:
+    build:
+      context: .
+    image: btcc20-indexer:latest
+    restart: unless-stopped
+    environment:
+      BTCC20_CHAIN: ${BTCC20_CHAIN:-mainnet}
+      BTCC20_VIEWER_HOST: 0.0.0.0
+      BTCC20_VIEWER_PORT: 8798
+      BTCC20_RPC_URL: ${BTCC20_RPC_URL:-http://host.docker.internal:28476}
+      BTCC20_RPC_USER: ${BTCC20_RPC_USER:-btcc_rpc_user}
+      BTCC20_RPC_PASSWORD: ${BTCC20_RPC_PASSWORD:-change_me}
+      BTCC20_ORD: /usr/local/bin/ord
+      BTCC20_INDEX_FILE: /data/index-state.json
+      BTCC20_INDEX_INTERVAL_MS: ${BTCC20_INDEX_INTERVAL_MS:-60000}
+      BTCC20_REORG_CHECK_DEPTH: ${BTCC20_REORG_CHECK_DEPTH:-20}
+    ports:
+      - "${BTCC20_VIEWER_PORT:-8798}:8798"
+    volumes:
+      - btcc20-indexer-data:/data
+      - ${BTCC20_ORD_HOST_PATH:-../btcc20-inscriber/target/release/ord}:/usr/local/bin/ord:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  btcc20-indexer-data:

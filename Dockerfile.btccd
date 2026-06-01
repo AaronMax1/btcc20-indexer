@@ -29,6 +29,7 @@ WORKDIR /src
 RUN ./autogen.sh \
   && ./configure \
     --disable-bench \
+    --disable-fuzz-binary \
     --disable-tests \
     --disable-wallet \
     --disable-zmq \

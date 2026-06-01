@@ -1,12 +1,9 @@
-import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = __dirname;
-const ord = process.env.BTCC20_ORD || path.join(projectRoot, '../btcc20-inscriber/target/release/ord');
 const indexFile = process.env.BTCC20_INDEX_FILE || path.join(__dirname, 'data/index-state.json');
 const config = {
   host: process.env.BTCC20_VIEWER_HOST || '127.0.0.1',
@@ -18,26 +15,6 @@ const config = {
   indexIntervalMs: Number(process.env.BTCC20_INDEX_INTERVAL_MS || 15_000),
   reorgCheckDepth: Number(process.env.BTCC20_REORG_CHECK_DEPTH || 20),
 };
-
-function runOrd(args, { raw = false } = {}) {
-  const base = [
-    '--chain', config.chain,
-    '--bitcoin-rpc-url', config.rpcUrl,
-    '--bitcoin-rpc-username', config.rpcUser,
-    '--bitcoin-rpc-password', config.rpcPassword,
-    'btcc20',
-  ];
-  return new Promise((resolve, reject) => {
-    execFile(ord, [...base, ...args], { cwd: projectRoot, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error) {
-        error.message = `${error.message}\n${stderr || stdout}`;
-        reject(error);
-        return;
-      }
-      resolve(raw ? stdout : JSON.parse(stdout));
-    });
-  });
-}
 
 async function rpc(method, params = []) {
   const response = await fetch(config.rpcUrl, {
@@ -80,19 +57,22 @@ async function rpcAuthed(method, params = []) {
 }
 
 async function getTipHeight() {
-  try {
-    return await rpcAuthed('getblockcount');
-  } catch {
-    return await rpc('getblockcount');
-  }
+  return config.rpcUser || config.rpcPassword
+    ? rpcAuthed('getblockcount')
+    : rpc('getblockcount');
 }
 
 async function getBlockHash(height) {
-  try {
-    return await rpcAuthed('getblockhash', [height]);
-  } catch {
-    return await rpc('getblockhash', [height]);
-  }
+  return config.rpcUser || config.rpcPassword
+    ? rpcAuthed('getblockhash', [height])
+    : rpc('getblockhash', [height]);
+}
+
+async function getBlock(height) {
+  const hash = await getBlockHash(height);
+  return config.rpcUser || config.rpcPassword
+    ? rpcAuthed('getblock', [hash, 2])
+    : rpc('getblock', [hash, 2]);
 }
 
 function readIndex() {
@@ -121,6 +101,307 @@ const indexStatus = {
 };
 
 let indexPromise = null;
+
+const PROTOCOL = 'btcc-20';
+
+function emptyState(startHeight = 0, endHeight = startHeight - 1) {
+  return {
+    start_height: startHeight,
+    end_height: endHeight,
+    blocks: [],
+    ledger: { tokens: {}, balances: {}, transfers: {} },
+    events: [],
+  };
+}
+
+function cloneState(state) {
+  return state ? JSON.parse(JSON.stringify(state)) : null;
+}
+
+function firstOutputAddress(tx) {
+  for (const output of tx.vout || []) {
+    const script = output.scriptPubKey || {};
+    if (typeof script.address === 'string') return script.address;
+    if (Array.isArray(script.addresses) && script.addresses[0]) return script.addresses[0];
+  }
+  return null;
+}
+
+function parseScript(hex) {
+  const bytes = Buffer.from(hex || '', 'hex');
+  const instructions = [];
+  for (let i = 0; i < bytes.length;) {
+    const opcode = bytes[i++];
+    if (opcode === 0x00) {
+      instructions.push({ push: Buffer.alloc(0) });
+    } else if (opcode >= 0x01 && opcode <= 0x4b) {
+      if (i + opcode > bytes.length) break;
+      instructions.push({ push: bytes.subarray(i, i + opcode) });
+      i += opcode;
+    } else if (opcode === 0x4c) {
+      if (i >= bytes.length) break;
+      const len = bytes[i++];
+      if (i + len > bytes.length) break;
+      instructions.push({ push: bytes.subarray(i, i + len) });
+      i += len;
+    } else if (opcode === 0x4d) {
+      if (i + 2 > bytes.length) break;
+      const len = bytes.readUInt16LE(i);
+      i += 2;
+      if (i + len > bytes.length) break;
+      instructions.push({ push: bytes.subarray(i, i + len) });
+      i += len;
+    } else if (opcode === 0x4e) {
+      if (i + 4 > bytes.length) break;
+      const len = bytes.readUInt32LE(i);
+      i += 4;
+      if (i + len > bytes.length) break;
+      instructions.push({ push: bytes.subarray(i, i + len) });
+      i += len;
+    } else if (opcode === 0x4f) {
+      instructions.push({ pushnum: Buffer.from([0x81]) });
+    } else if (opcode >= 0x51 && opcode <= 0x60) {
+      instructions.push({ pushnum: Buffer.from([opcode - 0x50]) });
+    } else {
+      instructions.push({ op: opcode });
+    }
+  }
+  return instructions;
+}
+
+function envelopesFromWitness(witness, inputIndex) {
+  if (!Array.isArray(witness) || witness.length < 2) return [];
+  const tapscript = witness[witness.length - 2];
+  const instructions = parseScript(tapscript);
+  const envelopes = [];
+
+  for (let i = 0; i < instructions.length; i += 1) {
+    const marker = instructions[i];
+    if (!marker?.push || marker.push.length !== 0) continue;
+    if (instructions[i + 1]?.op !== 0x63) continue;
+    const protocol = instructions[i + 2]?.push;
+    if (!protocol || protocol.toString('utf8') !== 'ord') continue;
+
+    const payload = [];
+    let valid = false;
+    for (let j = i + 3; j < instructions.length; j += 1) {
+      const instruction = instructions[j];
+      if (instruction?.op === 0x68) {
+        valid = true;
+        i = j;
+        break;
+      }
+      if (instruction?.push) {
+        payload.push(Buffer.from(instruction.push));
+      } else if (instruction?.pushnum) {
+        payload.push(Buffer.from(instruction.pushnum));
+      } else {
+        break;
+      }
+    }
+    if (valid) envelopes.push({ input: inputIndex, offset: envelopes.length, payload });
+  }
+
+  return envelopes;
+}
+
+function parseInscriptionPayload(payload) {
+  const bodyIndex = payload.findIndex((push, index) => index % 2 === 0 && push.length === 0);
+  if (bodyIndex === -1) return null;
+
+  for (let i = 0; i < bodyIndex; i += 2) {
+    const tag = payload[i];
+    const value = payload[i + 1];
+    if (tag?.length === 1 && tag[0] === 7 && value?.toString('utf8') !== PROTOCOL) return null;
+  }
+
+  const body = Buffer.concat(payload.slice(bodyIndex + 1));
+  let raw;
+  try {
+    raw = JSON.parse(body.toString('utf8'));
+  } catch {
+    return null;
+  }
+  return parsePayload(raw);
+}
+
+function parsePayload(raw) {
+  if (!raw || raw.p !== PROTOCOL || typeof raw.tick !== 'string') return null;
+  const tick = raw.tick.trim().toLowerCase();
+  if (!/^[a-z0-9]{4}$/.test(tick)) return null;
+
+  try {
+    if (raw.op === 'deploy') {
+      const dec = raw.dec === undefined ? 18 : Number(raw.dec);
+      if (!Number.isInteger(dec) || dec < 0 || dec > 18) return null;
+      const max = validDecimal(raw.max);
+      const lim = validDecimal(raw.lim);
+      if (!max || !lim) return null;
+      return { protocol: PROTOCOL, operation: { op: 'deploy', tick, max, lim, dec } };
+    }
+    if (raw.op === 'mint' || raw.op === 'transfer') {
+      const amt = validDecimal(raw.amt);
+      if (!amt) return null;
+      return { protocol: PROTOCOL, operation: { op: raw.op, tick, amt } };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function validDecimal(value) {
+  const text = String(value ?? '').trim();
+  if (!/^[0-9]+(\.[0-9]+)?$/.test(text)) return null;
+  if (!/[1-9]/.test(text)) return null;
+  return text;
+}
+
+function parseAmount(value, decimals) {
+  const text = validDecimal(value);
+  if (!text) return null;
+  const [whole, fraction = ''] = text.split('.');
+  if (fraction.length > decimals) return null;
+  const scale = 10n ** BigInt(decimals);
+  return BigInt(whole) * scale + BigInt(fraction.padEnd(decimals, '0') || '0');
+}
+
+function balance(ledger, tick, owner) {
+  ledger.balances[tick] ||= {};
+  ledger.balances[tick][owner] ||= { available: '0', transferable: '0' };
+  return ledger.balances[tick][owner];
+}
+
+function addRaw(value, delta) {
+  return (BigInt(value || '0') + delta).toString();
+}
+
+function applyInscription(ledger, inscription, owner, payload) {
+  const op = payload.operation;
+  if (op.op === 'deploy') {
+    if (ledger.tokens[op.tick]) return invalid('ticker already deployed');
+    const max = parseAmount(op.max, op.dec);
+    const lim = parseAmount(op.lim, op.dec);
+    if (max === null) return invalid('invalid max');
+    if (lim === null) return invalid('invalid lim');
+    if (lim > max) return invalid('lim exceeds max');
+    ledger.tokens[op.tick] = {
+      tick: op.tick,
+      max: max.toString(),
+      lim: lim.toString(),
+      dec: op.dec,
+      minted: '0',
+      deployer: owner,
+    };
+    return valid();
+  }
+
+  const token = ledger.tokens[op.tick];
+  if (!token) return invalid('ticker not deployed');
+  const amount = parseAmount(op.amt, token.dec);
+  if (amount === null) return invalid('invalid amount');
+
+  if (op.op === 'mint') {
+    if (amount > BigInt(token.lim)) return invalid('mint exceeds limit');
+    if (BigInt(token.minted) + amount > BigInt(token.max)) return invalid('mint exceeds max');
+    token.minted = addRaw(token.minted, amount);
+    const ownerBalance = balance(ledger, op.tick, owner);
+    ownerBalance.available = addRaw(ownerBalance.available, amount);
+    return valid();
+  }
+
+  const ownerBalance = balance(ledger, op.tick, owner);
+  if (BigInt(ownerBalance.available) < amount) return invalid('insufficient available balance');
+  ownerBalance.available = addRaw(ownerBalance.available, -amount);
+  ownerBalance.transferable = addRaw(ownerBalance.transferable, amount);
+  ledger.transfers[inscription] = {
+    tick: op.tick,
+    amount: amount.toString(),
+    owner,
+    spent: false,
+  };
+  return valid();
+}
+
+function applyTransferSpend(ledger, inscription, newOwner) {
+  const transfer = ledger.transfers[inscription];
+  if (!transfer) return invalid('transfer inscription not found');
+  if (transfer.spent) return invalid('transfer inscription already spent');
+
+  transfer.spent = true;
+  const oldBalance = balance(ledger, transfer.tick, transfer.owner);
+  const amount = BigInt(transfer.amount);
+  oldBalance.transferable = (BigInt(oldBalance.transferable || '0') > amount
+    ? BigInt(oldBalance.transferable) - amount
+    : 0n).toString();
+  const newBalance = balance(ledger, transfer.tick, newOwner);
+  newBalance.available = addRaw(newBalance.available, amount);
+  return valid();
+}
+
+function valid() {
+  return { valid: true, reason: null };
+}
+
+function invalid(reason) {
+  return { valid: false, reason };
+}
+
+function transferLocations(ledger) {
+  return new Map(Object.entries(ledger.transfers || {})
+    .filter(([, transfer]) => !transfer.spent)
+    .map(([inscription]) => [`${inscription.split('i')[0]}:0`, inscription]));
+}
+
+async function scanBlocks(current, tip, force) {
+  const state = force || !current ? emptyState(0) : cloneState(current);
+  state.ledger ||= { tokens: {}, balances: {}, transfers: {} };
+  state.ledger.tokens ||= {};
+  state.ledger.balances ||= {};
+  state.ledger.transfers ||= {};
+  state.events ||= [];
+  state.blocks ||= [];
+
+  const startHeight = force || !current ? 0 : current.end_height + 1;
+  if (startHeight > tip) return state;
+
+  const locations = transferLocations(state.ledger);
+  for (let height = startHeight; height <= tip; height += 1) {
+    const block = await getBlock(height);
+    state.blocks.push({ height, hash: block.hash });
+
+    for (const tx of block.tx || []) {
+      const owner = firstOutputAddress(tx);
+      for (const input of tx.vin || []) {
+        const previous = input.txid === undefined ? null : `${input.txid}:${input.vout}`;
+        const inscription = previous ? locations.get(previous) : null;
+        if (inscription && owner) {
+          locations.delete(previous);
+          const event = applyTransferSpend(state.ledger, inscription, owner);
+          state.events.push({ height, txid: tx.txid, inscription, owner, valid: event.valid, reason: event.reason, payload: null });
+        }
+      }
+
+      if (!owner) continue;
+      for (const [inputIndex, input] of (tx.vin || []).entries()) {
+        for (const envelope of envelopesFromWitness(input.txinwitness, inputIndex)) {
+          const payload = parseInscriptionPayload(envelope.payload);
+          if (!payload) continue;
+          const inscription = `${tx.txid}i${envelope.offset}`;
+          const event = applyInscription(state.ledger, inscription, owner, payload);
+          if (event.valid && payload.operation.op === 'transfer') {
+            locations.set(`${tx.txid}:0`, inscription);
+          }
+          state.events.push({ height, txid: tx.txid, inscription, owner, valid: event.valid, reason: event.reason, payload });
+        }
+      }
+    }
+
+    state.end_height = height;
+  }
+
+  return state;
+}
 
 const BECH32_ALPHABET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 
@@ -225,20 +506,7 @@ async function updateIndex({ force = false } = {}) {
 
   if (!indexPromise) {
     indexStatus.running = true;
-    const canResume = current && !force && !reorg;
-    const args = canResume
-      ? ['scan', '--state-in', indexFile, '--end-height', String(tip)]
-      : ['scan', '--start-height', '0', '--end-height', String(tip)];
-
-    indexPromise = runOrd(args)
-      .catch(error => {
-        if (canResume && /block hash mismatch|resume state/i.test(String(error?.message || error))) {
-          indexStatus.last_reorg_at = new Date().toISOString();
-          indexStatus.last_reorg_height = current.end_height;
-          return runOrd(['scan', '--start-height', '0', '--end-height', String(tip)]);
-        }
-        throw error;
-      })
+    indexPromise = scanBlocks(current, tip, force || Boolean(reorg))
       .then(data => {
         writeIndex(data);
         indexStatus.last_error = null;

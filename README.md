@@ -32,15 +32,6 @@ btcc20-indexer/
 
 - Node.js 18+
 - BTCC Core 节点，开启 RPC
-- 已编译的 BTCC-20 `ord` 可执行文件
-
-`ord` 可以来自同级开源目录：
-
-```text
-../btcc20-inscriber/target/release/ord
-```
-
-也可以用环境变量 `BTCC20_ORD` 指定其它路径。
 
 ## 主网启动
 
@@ -53,7 +44,6 @@ BTCC20_VIEWER_PORT=8798 \
 BTCC20_RPC_URL=http://127.0.0.1:28476 \
 BTCC20_RPC_USER=user \
 BTCC20_RPC_PASSWORD=YOUR_RPC_PASSWORD \
-BTCC20_ORD=/path/to/ord \
 BTCC20_INDEX_FILE=/var/lib/btcc20-indexer/index-state.json \
 BTCC20_INDEX_INTERVAL_MS=60000 \
 npm start
@@ -76,7 +66,6 @@ BTCC20_CHAIN=regtest \
 BTCC20_RPC_URL=http://127.0.0.1:28577 \
 BTCC20_RPC_USER=btcc20 \
 BTCC20_RPC_PASSWORD=btcc20 \
-BTCC20_ORD=../btcc20-inscriber/target/debug/ord \
 npm start
 ```
 
@@ -90,7 +79,6 @@ Compose 默认会启动两个服务：
 先在服务器上准备好：
 
 - 能访问 `https://github.com/Marcus-Vane/Bitcoin-Classic`，Compose 会从源码构建 BTCC Core 镜像
-- 已编译的 `ord` 可执行文件，例如 `../btcc20-inscriber/target/release/ord`
 
 复制环境变量模板。Docker Compose 会自动读取项目目录下的 `.env`：
 
@@ -108,7 +96,6 @@ BTCC20_RPC_PASSWORD=你的RPC密码
 BTCCD_REPO=https://github.com/Marcus-Vane/Bitcoin-Classic.git
 BTCCD_REF=main
 BTCCD_IMAGE=btcc-core:local
-BTCC20_ORD_HOST_PATH=/服务器上的/ord/路径
 ```
 
 构建镜像。节点镜像会从 `BTCCD_REPO` 拉源码；默认 `BTCCD_REF=main`，脚本会对 `btccd` 使用 `--no-cache`，避免 Docker 缓存旧源码：
@@ -170,7 +157,6 @@ docker compose up -d --build btcc20-indexer
 | `BTCC20_RPC_URL` | BTCC Core RPC 地址 | `http://127.0.0.1:28577` |
 | `BTCC20_RPC_USER` | RPC 用户名 | `btcc20` |
 | `BTCC20_RPC_PASSWORD` | RPC 密码 | `btcc20` |
-| `BTCC20_ORD` | BTCC-20 `ord` 可执行文件路径 | `../btcc20-inscriber/target/release/ord` |
 | `BTCC20_INDEX_FILE` | 索引状态文件 | `data/index-state.json` |
 | `BTCC20_INDEX_INTERVAL_MS` | 自动更新间隔 | `15000` |
 | `BTCC20_REORG_CHECK_DEPTH` | 重组检查深度 | `20` |

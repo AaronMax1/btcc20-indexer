@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BTCC-20 Explorer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="topbar">
+      <div class="brand">
+        <strong>BTCC-20</strong>
+        <span>inscription explorer</span>
+      </div>
+      <nav>
+        <button type="button" data-page-target="overview">总览</button>
+        <button type="button" data-page-target="inscribe">铭刻</button>
+        <button type="button" data-page-target="tokens">Token</button>
+        <button type="button" data-page-target="holders">持仓</button>
+        <button type="button" data-page-target="events">活动</button>
+      </nav>
+      <div class="side-actions">
+        <button id="refresh" type="button">刷新扫描</button>
+      </div>
+      <span id="status">连接中</span>
+    </div>
+    <main>
+      <header>
+        <div>
+          <p>Ordinals inscription · BTCC-20 indexer</p>
+          <h1>BTCC-20 Explorer</h1>
+        </div>
+        <div class="header-meta">
+          <span id="range">height --</span>
+          <span id="updated">--</span>
+        </div>
+      </header>
+      <section id="overview" class="page" data-page="overview">
+        <div id="summary" class="summary"></div>
+        <div id="analysis" class="analysis"></div>
+      </section>
+      <section id="inscribe" class="page" data-page="inscribe" hidden>
+        <div class="section-head"><h2>铭刻助手</h2><span>Generate payload and local CLI command</span></div>
+        <form id="inscribe-form" class="inscribe-shell">
+          <div class="panel inscribe-main">
+            <div class="segmented">
+              <label><input type="radio" name="op" value="deploy" checked><span>Deploy</span></label>
+              <label><input type="radio" name="op" value="mint"><span>Mint</span></label>
+              <label><input type="radio" name="op" value="transfer"><span>Transfer</span></label>
+            </div>
+            <div class="form-grid">
+              <label>钱包 <input name="wallet" value="miner" autocomplete="off"></label>
+              <label>Ticker <input name="tick" value="cord" maxlength="12" autocomplete="off"></label>
+              <label class="deploy-field">总张数 <input name="mint_count" value="21000000" inputmode="numeric"></label>
+              <label class="deploy-field">每张数量 <input name="lim" value="1000" inputmode="decimal"></label>
+              <label class="deploy-field">总量 Max <input name="max" value="21000000000" inputmode="decimal" readonly></label>
+              <label class="deploy-field">Decimals <input name="dec" value="18" inputmode="numeric"></label>
+              <label class="amount-field">Amount <input name="amt" value="1000" inputmode="decimal"></label>
+              <label class="wide">Destination <input name="destination" placeholder="留空则从钱包生成新地址" autocomplete="off"></label>
+            </div>
+            <div class="form-actions">
+              <button class="primary-action" type="submit">生成命令</button>
+              <span id="inscribe-status"></span>
+            </div>
+          </div>
+          <aside class="panel inscribe-side">
+            <div>
+              <span>Payload</span>
+              <pre id="payload-preview" class="payload-preview"></pre>
+            </div>
+            <div>
+              <span>Local command</span>
+              <pre id="inscribe-result" class="result" hidden></pre>
+            </div>
+          </aside>
+        </form>
+      </section>
+      <section id="tokens" class="page" data-page="tokens" hidden>
+        <div class="section-head"><h2>Token</h2><span>deploy / mint / supply</span></div>
+        <div id="token-grid" class="grid"></div>
+      </section>
+      <section id="holders" class="page" data-page="holders" hidden>
+        <div class="section-head">
+          <h2>持仓</h2>
+          <div class="toolbar">
+            <input id="holder-search" type="search" placeholder="搜索地址或 ticker">
+            <select id="holder-sort">
+              <option value="total-desc">总余额 ↓</option>
+              <option value="available-desc">可用余额 ↓</option>
+              <option value="transferable-desc">转账中 ↓</option>
+              <option value="address-asc">地址 A-Z</option>
+            </select>
+          </div>
+        </div>
+        <div class="panel table-wrap">
+          <table class="holders-table">
+            <colgroup>
+              <col class="col-ticker">
+              <col class="col-address">
+              <col class="col-amount">
+              <col class="col-amount">
+              <col class="col-amount">
+              <col class="col-share">
+            </colgroup>
+            <thead><tr><th>Ticker</th><th>地址</th><th>可用</th><th>转账中</th><th>总余额</th><th>占已铸造</th></tr></thead>
+            <tbody id="holders-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="events" class="page" data-page="events" hidden>
+        <div class="section-head">
+          <h2>活动记录</h2>
+          <div class="toolbar">
+            <select id="event-filter">
+              <option value="all">全部活动</option>
+              <option value="deploy">部署</option>
+              <option value="mint">铸造</option>
+              <option value="transfer">转账</option>
+              <option value="transfer_inscription">转账铭文</option>
+              <option value="invalid">无效</option>
+            </select>
+          </div>
+        </div>
+        <div class="panel table-wrap">
+          <table class="events-table">
+            <thead><tr><th>高度</th><th>类型</th><th>Ticker</th><th>数量</th><th>From</th><th>To / Owner</th><th>Tx</th><th>状态</th></tr></thead>
+            <tbody id="events-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>

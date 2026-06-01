@@ -76,6 +76,12 @@ Compose 默认会启动两个服务：
 - `btccd`：BTCC Core 节点，负责同步链和提供 RPC
 - `btcc20-indexer`：BTCC-20 索引器和浏览器
 
+完整服务器部署流程见 [DEPLOY.md](./DEPLOY.md)。一般情况下不需要上传镜像，直接在服务器执行：
+
+```sh
+./scripts/deploy.sh
+```
+
 先在服务器上准备好：
 
 - 能访问 `https://github.com/Marcus-Vane/Bitcoin-Classic`，Compose 会从源码构建 BTCC Core 镜像

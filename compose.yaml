@@ -29,7 +29,7 @@ services:
   btcc20-indexer:
     build:
       context: .
-    image: btcc20-indexer:latest
+    image: ${BTCC20_INDEXER_IMAGE:-btcc20-indexer:latest}
     restart: unless-stopped
     depends_on:
       - btccd
@@ -42,6 +42,7 @@ services:
       BTCC20_RPC_PASSWORD: ${BTCC20_RPC_PASSWORD:-change_me}
       BTCC20_INDEX_FILE: /data/index-state.json
       BTCC20_INDEX_INTERVAL_MS: ${BTCC20_INDEX_INTERVAL_MS:-60000}
+      BTCC20_INDEX_BATCH_SIZE: ${BTCC20_INDEX_BATCH_SIZE:-100}
       BTCC20_REORG_CHECK_DEPTH: ${BTCC20_REORG_CHECK_DEPTH:-20}
     ports:
       - "${BTCC20_VIEWER_PORT:-8798}:8798"

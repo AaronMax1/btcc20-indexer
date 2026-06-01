@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "docker:build": "sh scripts/docker-build.sh"
+    "docker:build": "sh scripts/docker-build.sh",
+    "deploy": "sh scripts/deploy.sh",
+    "status": "sh scripts/status.sh"
   },
   "dependencies": {}
 }

@@ -6,7 +6,8 @@ const TOKEN_META = {
 };
 
 let lastData = null;
-let currentPage = localStorage.getItem('btcc20-page') || 'tokens';
+const pageFromHash = () => location.hash.replace(/^#/, '');
+let currentPage = pageFromHash() || localStorage.getItem('btcc20-page') || 'tokens';
 
 const short = value => {
   const text = String(value || '');
@@ -269,6 +270,7 @@ function render(data) {
 function setPage(page) {
   currentPage = page;
   localStorage.setItem('btcc20-page', page);
+  if (location.hash !== `#${page}`) history.replaceState(null, '', `#${page}`);
   document.querySelectorAll('[data-page]').forEach(section => {
     section.hidden = section.dataset.page !== page;
   });
@@ -288,6 +290,15 @@ $('refresh').onclick = () => refresh().catch(err => $('status').textContent = er
 
 document.querySelectorAll('[data-page-target]').forEach(button => {
   button.addEventListener('click', () => setPage(button.dataset.pageTarget));
+});
+
+window.addEventListener('hashchange', () => {
+  const page = pageFromHash();
+  if (page && document.querySelector(`[data-page="${page}"]`)) setPage(page);
+});
+
+window.addEventListener('load', () => {
+  if (pageFromHash()) requestAnimationFrame(() => window.scrollTo(0, 0));
 });
 
 function selectedOp() {

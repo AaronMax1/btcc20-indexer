@@ -326,6 +326,30 @@ header p {
   padding: 16px;
 }
 
+.agent-strip {
+  display: grid;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(5, 8, 11, .36);
+  padding: 13px;
+}
+
+.agent-strip > div {
+  display: grid;
+  gap: 4px;
+}
+
+.agent-strip span,
+.agent-strip small {
+  color: var(--muted);
+}
+
+.agent-strip strong {
+  font-size: 17px;
+}
+
 .inscribe-side {
   align-content: start;
 }
@@ -337,6 +361,78 @@ header p {
 .inscribe-side span {
   display: block;
   margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.side-title,
+.agent-package-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.side-title span {
+  margin-bottom: 0;
+}
+
+.side-title button,
+.agent-package-row button,
+.button-link {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(240, 184, 75, .24);
+  border-radius: 8px;
+  background: rgba(240, 184, 75, .08);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.agent-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.agent-kpis div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(5, 8, 11, .34);
+  padding: 10px;
+}
+
+.agent-kpis small {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.agent-kpis strong {
+  display: block;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-job-log {
+  min-height: 132px;
+}
+
+.agent-package-row small {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
@@ -664,6 +760,10 @@ code,
   .inscribe-shell {
     grid-template-columns: minmax(0, 1.35fr) minmax(340px, .65fr);
     align-items: start;
+  }
+
+  .agent-strip {
+    grid-template-columns: 1fr auto;
   }
 
   .form-grid {

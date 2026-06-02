@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+cd "$DIR"
+
+export BTCC20_AGENT_HOST="${BTCC20_AGENT_HOST:-127.0.0.1}"
+export BTCC20_AGENT_PORT="${BTCC20_AGENT_PORT:-28798}"
+export BTCC20_AGENT_RPC_URL="${BTCC20_AGENT_RPC_URL:-http://127.0.0.1:28476}"
+export BTCC20_AGENT_RPC_USER="${BTCC20_AGENT_RPC_USER:-btcc_rpc_user}"
+export BTCC20_AGENT_RPC_PASSWORD="${BTCC20_AGENT_RPC_PASSWORD:-change_me}"
+export BTCC20_AGENT_WALLET="${BTCC20_AGENT_WALLET:-miner}"
+export BTCC20_AGENT_DRY_RUN="${BTCC20_AGENT_DRY_RUN:-1}"
+
+node agent.mjs

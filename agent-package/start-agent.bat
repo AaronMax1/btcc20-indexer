@@ -1,0 +1,13 @@
+@echo off
+setlocal
+cd /d "%~dp0"
+
+if "%BTCC20_AGENT_HOST%"=="" set BTCC20_AGENT_HOST=127.0.0.1
+if "%BTCC20_AGENT_PORT%"=="" set BTCC20_AGENT_PORT=28798
+if "%BTCC20_AGENT_RPC_URL%"=="" set BTCC20_AGENT_RPC_URL=http://127.0.0.1:28476
+if "%BTCC20_AGENT_RPC_USER%"=="" set BTCC20_AGENT_RPC_USER=btcc_rpc_user
+if "%BTCC20_AGENT_RPC_PASSWORD%"=="" set BTCC20_AGENT_RPC_PASSWORD=change_me
+if "%BTCC20_AGENT_WALLET%"=="" set BTCC20_AGENT_WALLET=miner
+if "%BTCC20_AGENT_DRY_RUN%"=="" set BTCC20_AGENT_DRY_RUN=1
+
+node agent.mjs

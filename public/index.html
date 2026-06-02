@@ -43,9 +43,17 @@
         <div id="analysis" class="analysis"></div>
       </section>
       <section id="inscribe" class="page" data-page="inscribe" hidden>
-        <div class="section-head"><h2>铭刻助手</h2><span>Generate payload and local CLI command</span></div>
+        <div class="section-head"><h2>铭刻助手</h2><span>Use local agent and local BTCC Core wallet</span></div>
         <form id="inscribe-form" class="inscribe-shell">
           <div class="panel inscribe-main">
+            <div class="agent-strip">
+              <div>
+                <span>本地 Agent</span>
+                <strong id="agent-status">未连接</strong>
+                <small id="agent-detail">启动本地 agent 后可直接从网页发起铭刻</small>
+              </div>
+              <button id="agent-connect" type="button">连接本地服务</button>
+            </div>
             <div class="segmented">
               <label><input type="radio" name="op" value="deploy" checked><span>Deploy</span></label>
               <label><input type="radio" name="op" value="mint"><span>Mint</span></label>
@@ -62,7 +70,8 @@
               <label class="wide">Destination <input name="destination" placeholder="留空则从钱包生成新地址" autocomplete="off"></label>
             </div>
             <div class="form-actions">
-              <button class="primary-action" type="submit">生成命令</button>
+              <button class="primary-action" type="submit">本地铭刻</button>
+              <button id="command-only" type="button">只生成命令</button>
               <span id="inscribe-status"></span>
             </div>
           </div>
@@ -74,6 +83,26 @@
             <div>
               <span>Local command</span>
               <pre id="inscribe-result" class="result" hidden></pre>
+            </div>
+            <div class="agent-console">
+              <div class="side-title">
+                <span>Agent</span>
+                <button id="agent-refresh-jobs" type="button">刷新</button>
+              </div>
+              <div class="agent-kpis">
+                <div><small>状态</small><strong id="agent-run-state">Idle</strong></div>
+                <div><small>模式</small><strong id="agent-mode">--</strong></div>
+                <div><small>节点</small><strong id="agent-sync">--</strong></div>
+                <div><small>RPC</small><strong id="agent-rpc">--</strong></div>
+              </div>
+              <pre id="agent-job" class="result agent-job-log">等待本地任务</pre>
+            </div>
+            <div class="agent-package">
+              <span>Local Agent</span>
+              <div class="agent-package-row">
+                <a id="agent-package-download" class="button-link" href="/downloads/btcc20-agent-local.zip" download>下载 Agent</a>
+                <small id="agent-package-status">local zip</small>
+              </div>
             </div>
           </aside>
         </form>

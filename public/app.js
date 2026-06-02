@@ -8,6 +8,12 @@ const TOKEN_META = {
 let lastData = null;
 const pageFromHash = () => location.hash.replace(/^#/, '');
 let currentPage = pageFromHash() || localStorage.getItem('btcc20-page') || 'tokens';
+let agent = {
+  url: localStorage.getItem('btcc20-agent-url') || 'http://127.0.0.1:28798',
+  connected: false,
+  health: null,
+  jobTimer: null,
+};
 
 const short = value => {
   const text = String(value || '');
@@ -72,6 +78,24 @@ function ratio(part, total) {
 
 async function get(path, opts) {
   const res = await fetch(path, opts);
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || `${path} ${res.status}`);
+  return data;
+}
+
+async function agentGet(path) {
+  const res = await fetch(`${agent.url}${path}`, { cache: 'no-store' });
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || `${path} ${res.status}`);
+  return data;
+}
+
+async function agentPost(path, payload) {
+  const res = await fetch(`${agent.url}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
   const data = await res.json();
   if (!res.ok || data.error) throw new Error(data.error || `${path} ${res.status}`);
   return data;
@@ -343,6 +367,15 @@ function currentInscribePayload() {
   return payload;
 }
 
+function currentAgentRequest() {
+  const form = new FormData($('inscribe-form'));
+  return {
+    ...currentInscribePayload(),
+    wallet: String(form.get('wallet') || '').trim(),
+    destination: String(form.get('destination') || '').trim(),
+  };
+}
+
 function renderPayloadPreview() {
   $('payload-preview').textContent = JSON.stringify(currentInscribePayload(), null, 2);
 }
@@ -350,9 +383,26 @@ function renderPayloadPreview() {
 function currentInscribeCommand() {
   const form = new FormData($('inscribe-form'));
   const op = selectedOp();
-  const wallet = String(form.get('wallet') || 'btcc20').trim();
+  const wallet = String(form.get('wallet') || 'miner').trim();
   const tick = String(form.get('tick') || '').trim();
-  const args = ['btcc20-inscriber', 'inscribe', '--wallet', wallet, op, '--tick', tick];
+  const args = [
+    'ord',
+    '--chain',
+    'mainnet',
+    '--bitcoin-rpc-url',
+    'http://127.0.0.1:28476',
+    '--bitcoin-rpc-username',
+    'btcc_rpc_user',
+    '--bitcoin-rpc-password',
+    'change_me',
+    'btcc20',
+    'inscribe',
+    '--wallet',
+    wallet,
+    op,
+    '--tick',
+    tick,
+  ];
   if (op === 'deploy') {
     args.push('--max', String(form.get('max') || '').trim());
     args.push('--lim', String(form.get('lim') || '').trim());
@@ -366,6 +416,92 @@ function currentInscribeCommand() {
   return args.map(shellQuote).join(' ');
 }
 
+function setAgentState(connected, detail, health = null) {
+  agent.connected = connected;
+  agent.health = health;
+  $('agent-status').textContent = connected ? '已连接' : '未连接';
+  $('agent-status').className = connected ? 'ok' : 'warn';
+  $('agent-detail').textContent = detail;
+  $('agent-connect').textContent = connected ? '重新检测' : '连接本地服务';
+  $('agent-run-state').textContent = connected ? 'Ready' : 'Offline';
+  $('agent-run-state').className = connected ? 'ok' : 'warn';
+  $('agent-mode').textContent = health ? (health.dry_run ? 'Dry run' : 'Live') : '--';
+  $('agent-rpc').textContent = health?.rpc_url ? health.rpc_url.replace('http://', '') : '--';
+}
+
+async function connectAgent() {
+  try {
+    $('agent-detail').textContent = '检测 http://127.0.0.1:28798 ...';
+    const health = await agentGet('/health');
+    let statusText = `${health.agent} · ${health.chain} · ${health.dry_run ? 'Dry run' : '真实执行'}`;
+    try {
+      const node = await agentGet('/node/status');
+      statusText += ` · 节点 ${node.blocks}/${node.headers}`;
+      if (node.wallets?.length) statusText += ` · 钱包 ${node.wallets.join(', ')}`;
+      $('agent-sync').textContent = `${node.blocks}/${node.headers}`;
+      $('agent-sync').className = node.initialblockdownload || node.blocks < node.headers ? 'warn' : 'ok';
+    } catch (error) {
+      statusText += ` · 节点未连接: ${error.message}`;
+      $('agent-sync').textContent = 'Error';
+      $('agent-sync').className = 'bad';
+    }
+    setAgentState(true, statusText, health);
+  } catch (error) {
+    setAgentState(false, `未发现本地 agent：${error.message}`);
+    $('agent-sync').textContent = '--';
+    $('agent-job').textContent = `Agent offline\n\n${error.message}`;
+  }
+}
+
+function renderJob(job) {
+  $('agent-job').hidden = false;
+  $('agent-job').textContent = [
+    `job ${job.id} · ${job.status}${job.dry_run ? ' · dry-run' : ''}`,
+    '',
+    job.command,
+    '',
+    ...(job.logs || []),
+  ].join('\n');
+  $('agent-run-state').textContent = job.status;
+  $('agent-run-state').className = job.status === 'failed' ? 'bad' : (job.status === 'running' ? 'warn' : 'ok');
+  $('inscribe-status').textContent = job.dry_run
+    ? 'Dry run：已生成 agent 任务'
+    : `Agent 任务：${job.status}`;
+}
+
+async function refreshAgentJobs() {
+  if (!agent.connected) await connectAgent();
+  if (!agent.connected) return;
+  const data = await agentGet('/jobs');
+  if (!data.jobs?.length) {
+    $('agent-job').textContent = '暂无任务';
+    $('agent-run-state').textContent = 'Ready';
+    $('agent-run-state').className = 'ok';
+    return;
+  }
+  renderJob(data.jobs[0]);
+}
+
+function pollJob(id) {
+  clearInterval(agent.jobTimer);
+  agent.jobTimer = setInterval(async () => {
+    try {
+      const job = await agentGet(`/jobs/${id}`);
+      renderJob(job);
+      if (['dry_run', 'completed', 'failed'].includes(job.status)) clearInterval(agent.jobTimer);
+    } catch (error) {
+      clearInterval(agent.jobTimer);
+      $('inscribe-status').textContent = error.message;
+    }
+  }, 1500);
+}
+
+function showCommandOnly() {
+  $('inscribe-result').textContent = currentInscribeCommand();
+  $('inscribe-result').hidden = false;
+  $('inscribe-status').textContent = '已生成，本地执行';
+}
+
 $('inscribe-form').addEventListener('change', syncInscribeFields);
 $('inscribe-form').addEventListener('input', () => {
   syncDeployMax();
@@ -374,9 +510,37 @@ $('inscribe-form').addEventListener('input', () => {
 $('inscribe-form').addEventListener('submit', async event => {
   event.preventDefault();
   syncDeployMax();
-  $('inscribe-result').textContent = currentInscribeCommand();
-  $('inscribe-result').hidden = false;
-  $('inscribe-status').textContent = '已生成，本地执行';
+  if (!agent.connected) {
+    await connectAgent();
+  }
+  if (!agent.connected) {
+    showCommandOnly();
+    return;
+  }
+  try {
+    $('inscribe-status').textContent = '发送到本地 agent ...';
+    $('agent-run-state').textContent = 'Sending';
+    $('agent-run-state').className = 'warn';
+    $('agent-job').textContent = 'Sending request to local agent...';
+    const op = selectedOp();
+    const job = await agentPost(`/inscribe/${op}`, currentAgentRequest());
+    renderJob(job);
+    if (!['dry_run', 'completed', 'failed'].includes(job.status)) pollJob(job.id);
+  } catch (error) {
+    $('inscribe-status').textContent = error.message;
+    $('agent-run-state').textContent = 'Error';
+    $('agent-run-state').className = 'bad';
+    $('agent-job').textContent = `Agent error\n\n${error.message}`;
+    showCommandOnly();
+  }
+});
+$('agent-connect').addEventListener('click', connectAgent);
+$('agent-refresh-jobs').addEventListener('click', () => refreshAgentJobs().catch(error => {
+  $('agent-job').textContent = `Agent error\n\n${error.message}`;
+}));
+$('command-only').addEventListener('click', () => {
+  syncDeployMax();
+  showCommandOnly();
 });
 
 $('holder-search').addEventListener('input', () => lastData && render(lastData));
@@ -387,4 +551,5 @@ refresh().catch(err => $('status').textContent = err.message);
 setPage(currentPage);
 syncDeployMax();
 syncInscribeFields();
+connectAgent().catch(() => {});
 setInterval(() => refresh().catch(console.error), 10000);

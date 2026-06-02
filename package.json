@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
+    "agent": "node agent.mjs",
     "docker:build": "sh scripts/docker-build.sh",
     "deploy": "sh scripts/deploy.sh",
     "status": "sh scripts/status.sh"

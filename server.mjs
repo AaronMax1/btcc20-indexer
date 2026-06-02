@@ -677,9 +677,15 @@ function staticFile(req, res) {
   const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
   const full = path.join(__dirname, 'public', file);
   if (!full.startsWith(path.join(__dirname, 'public')) || !fs.existsSync(full)) return false;
-  const type = full.endsWith('.css') ? 'text/css' : full.endsWith('.js') ? 'text/javascript' : 'text/html; charset=utf-8';
+  const type = full.endsWith('.css')
+    ? 'text/css'
+    : full.endsWith('.js')
+      ? 'text/javascript'
+      : full.endsWith('.zip')
+        ? 'application/zip'
+        : 'text/html; charset=utf-8';
   res.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' });
-  res.end(fs.readFileSync(full));
+  res.end(req.method === 'HEAD' ? undefined : fs.readFileSync(full));
   return true;
 }
 

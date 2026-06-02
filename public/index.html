@@ -55,9 +55,9 @@
               <button id="agent-connect" type="button">连接本地服务</button>
             </div>
             <div class="segmented">
-              <label><input type="radio" name="op" value="deploy" checked><span>Deploy</span></label>
-              <label><input type="radio" name="op" value="mint"><span>Mint</span></label>
+              <label><input type="radio" name="op" value="mint" checked><span>Mint</span></label>
               <label><input type="radio" name="op" value="transfer"><span>Transfer</span></label>
+              <label><input type="radio" name="op" value="deploy"><span>Deploy</span></label>
             </div>
             <div class="form-grid">
               <label>钱包 <input name="wallet" value="miner" autocomplete="off"></label>
@@ -106,6 +106,28 @@
             </div>
           </aside>
         </form>
+        <div class="panel agent-guide">
+          <div class="guide-step">
+            <strong>1</strong>
+            <span>下载 Agent</span>
+            <p>点击右侧下载按钮，获取本地 agent 压缩包。</p>
+          </div>
+          <div class="guide-step">
+            <strong>2</strong>
+            <span>解压并启动</span>
+            <p>解压后运行 <code>start-agent.bat</code>，窗口保持打开。</p>
+          </div>
+          <div class="guide-step">
+            <strong>3</strong>
+            <span>填写参数</span>
+            <p>默认是 <code>cord</code>，要打别的 ticker 可改网页字段或 txt。</p>
+          </div>
+          <div class="guide-step">
+            <strong>4</strong>
+            <span>本地铭刻</span>
+            <p>确认 agent 显示已连接后，点击本地铭刻执行。</p>
+          </div>
+        </div>
       </section>
       <section id="tokens" class="page" data-page="tokens" hidden>
         <div class="section-head"><h2>Token</h2><span>deploy / mint / supply</span></div>

@@ -438,6 +438,49 @@ header p {
   font-weight: 700;
 }
 
+.agent-guide {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  padding: 0;
+  background: var(--line);
+}
+
+.guide-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px 12px;
+  min-width: 0;
+  background: rgba(12, 17, 23, .88);
+  padding: 14px;
+}
+
+.guide-step strong {
+  display: grid;
+  grid-row: span 2;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid rgba(240, 184, 75, .34);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 13px;
+}
+
+.guide-step span {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.guide-step p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 .segmented {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -760,6 +803,10 @@ code,
   .inscribe-shell {
     grid-template-columns: minmax(0, 1.35fr) minmax(340px, .65fr);
     align-items: start;
+  }
+
+  .agent-guide {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .agent-strip {

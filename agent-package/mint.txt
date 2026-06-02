@@ -1,0 +1,6 @@
+# BTCC-20 mint parameters.
+# Change tick/amt/count/destination if needed.
+tick=cord
+amt=1000
+count=1
+destination=

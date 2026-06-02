@@ -1,0 +1,5 @@
+# BTCC-20 transfer inscription parameters.
+# Change tick/amt/destination if needed.
+tick=cord
+amt=1000
+destination=

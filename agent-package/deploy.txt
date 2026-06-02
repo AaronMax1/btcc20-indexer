@@ -1,0 +1,7 @@
+# BTCC-20 deploy parameters.
+# Change these values if you want to deploy another ticker.
+tick=cord
+max=21000000000
+lim=1000
+dec=18
+destination=

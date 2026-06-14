@@ -19,7 +19,6 @@ services:
       - -rpcpassword=${BTCC20_RPC_PASSWORD:-change_me}
       - -dnsseed=${BTCCD_DNSSEED:-0}
       - -fixedseeds=${BTCCD_FIXEDSEEDS:-0}
-      - -connect=${BTCCD_CONNECT:-43.163.236.59:18465}
     volumes:
       - btccd-data:/data
     ports:

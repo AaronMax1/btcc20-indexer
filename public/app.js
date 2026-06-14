@@ -5,7 +5,10 @@ const TOKEN_META = {
   cord: { name: 'Classic Ordinal' },
 };
 
-let lastData = null;
+let overviewData = null;
+let holderPage = 1;
+let eventPage = 1;
+const PAGE_LIMIT = 50;
 const pageFromHash = () => location.hash.replace(/^#/, '');
 let currentPage = pageFromHash() || localStorage.getItem('btcc20-page') || 'tokens';
 let agent = {
@@ -127,32 +130,8 @@ function activityLabel(type) {
   }[type] || type;
 }
 
-function buildHolderRows(data) {
-  const rows = [];
-  for (const [tick, holders] of Object.entries(data.ledger.balances || {})) {
-    const token = data.ledger.tokens[tick] || {};
-    const dec = token.dec ?? 18;
-    for (const [address, balance] of Object.entries(holders)) {
-      const available = asBigInt(balance.available);
-      const transferable = asBigInt(balance.transferable);
-      rows.push({
-        tick,
-        address,
-        available,
-        transferable,
-        total: available + transferable,
-        dec,
-        minted: asBigInt(token.minted || 0),
-      });
-    }
-  }
-  return rows;
-}
-
-function renderSummary(data, holders) {
-  const tokens = Object.values(data.ledger.tokens || {});
-  const events = data.events || [];
-  const validEvents = events.filter(e => e.valid).length;
+function renderSummary(data) {
+  const tokens = data.tokens || [];
   const indexText = data.index
     ? `${data.end_height}/${data.index.tip ?? data.end_height}`
     : data.end_height;
@@ -160,22 +139,16 @@ function renderSummary(data, holders) {
   $('updated').textContent = new Date().toLocaleString();
   $('summary').innerHTML = [
     ['Token', tokens.length],
-    ['有效活动', validEvents],
-    ['持仓地址', holders.length],
+    ['有效活动', data.valid_event_count || 0],
+    ['持仓地址', data.holder_count || 0],
     ['索引高度', indexText],
   ].map(([k, v]) => `<div class="card"><span>${k}</span><strong>${typeof v === 'number' ? fmt.format(v) : v}</strong></div>`).join('');
 }
 
-function renderAnalysis(data, holders) {
-  const events = data.events || [];
-  const latest = events.at(-1);
-  const tokens = Object.values(data.ledger.tokens || {});
-  const opCounts = events.reduce((acc, event) => {
-    const type = activityType(event);
-    acc[type] = (acc[type] || 0) + 1;
-    return acc;
-  }, {});
-  const invalid = events.filter(e => !e.valid);
+function renderAnalysis(data) {
+  const latest = data.latest_event;
+  const tokens = data.tokens || [];
+  const opCounts = data.op_counts || {};
   const mintedSupply = tokens
     .map(token => `${tokenMeta(token.tick).name || token.tick.toUpperCase()} ${amount(token.minted, token.dec ?? 18)}`)
     .join(' · ') || '--';
@@ -185,12 +158,12 @@ function renderAnalysis(data, holders) {
     ['已铸造供应', mintedSupply, tokens.length ? '按 token deploy 精度格式化' : '暂无 token'],
     ['活动结构', `D ${opCounts.deploy || 0} · M ${opCounts.mint || 0} · T ${opCounts.transfer || 0}`, 'deploy / mint / transfer'],
     ['索引状态', syncText, data.index ? `tip ${data.index.tip} · reorg depth ${data.index.reorg_check_depth}` : '本地索引服务'],
-    ['异常事件', invalid.length, invalid[0]?.reason || '当前扫描范围未发现无效铭文'],
+    ['异常事件', data.invalid_event_count || 0, data.first_invalid_reason || '当前扫描范围未发现无效铭文'],
   ].map(([k, v, s]) => `<div class="analysis-item"><span>${k}</span><strong>${v}</strong><span>${s}</span></div>`).join('');
 }
 
 function renderTokens(data) {
-  const tokens = Object.values(data.ledger.tokens || {});
+  const tokens = data.tokens || [];
   $('token-grid').innerHTML = tokens.map(t => {
     const pct = ratio(t.minted, t.max);
     const totalCount = countFromLimit(t.max, t.lim);
@@ -215,25 +188,15 @@ function renderTokens(data) {
         <div><span>总张数</span><strong>${totalCount}</strong></div>
         <div><span>已铸张数</span><strong>${mintedCount}</strong></div>
         <div><span>每张数量</span><strong>${amount(t.lim, t.dec)}</strong></div>
-        <div><span>Holders</span><strong>${Object.keys(data.ledger.balances?.[t.tick] || {}).length}</strong></div>
+        <div><span>Holders</span><strong>${t.holder_count || 0}</strong></div>
         <div><span>Deployer</span><strong class="mono" title="${t.deployer}">${short(t.deployer)}</strong></div>
       </div>
     </div>`;
   }).join('') || '<div class="panel empty">暂无 token</div>';
 }
 
-function renderHolders(data, holders) {
-  const q = $('holder-search').value.trim().toLowerCase();
-  const [sortKey, dir] = $('holder-sort').value.split('-');
-  const direction = dir === 'asc' ? 1 : -1;
-  const visible = holders
-    .filter(row => !q || row.tick.includes(q) || row.address.toLowerCase().includes(q))
-    .sort((a, b) => {
-      if (sortKey === 'address') return a.address.localeCompare(b.address) * direction;
-      return Number((b[sortKey] || 0n) - (a[sortKey] || 0n)) * (dir === 'desc' ? 1 : -1);
-    });
-
-  $('holders-body').innerHTML = visible.map(row => {
+function renderHolders(data) {
+  $('holders-body').innerHTML = (data.rows || []).map(row => {
     const pct = row.minted ? ratio(row.total, row.minted) : 0;
     const meta = tokenMeta(row.tick);
     return `<tr>
@@ -245,33 +208,20 @@ function renderHolders(data, holders) {
       <td class="num">${pctFmt.format(pct)}%</td>
     </tr>`;
   }).join('') || '<tr><td colspan="6" class="empty">没有匹配的持仓</td></tr>';
+  $('holders-page-info').textContent = `${data.page}/${data.total_pages} · ${fmt.format(data.total)} 条`;
+  $('holders-prev').disabled = data.page <= 1;
+  $('holders-next').disabled = data.page >= data.total_pages;
 }
 
 function renderEvents(data) {
-  const filter = $('event-filter').value;
-  const events = (data.events || []).slice().reverse().filter(event => {
-    if (filter === 'all') return true;
-    if (filter === 'invalid') return !event.valid;
-    return activityType(event) === filter;
-  });
-
-  $('events-body').innerHTML = events.map(e => {
-    const op = eventOp(e);
-    const type = activityType(e);
-    const spentTransfer = op === 'spend' ? data.ledger.transfers?.[e.inscription] : null;
-    const tick = e.payload?.operation?.tick || spentTransfer?.tick || '';
-    const token = tick ? data.ledger.tokens?.[tick] : null;
-    const dec = token?.dec ?? 18;
-    const rawAmt = e.payload?.operation?.amt || e.payload?.operation?.max || null;
-    const qty = spentTransfer
-      ? amount(spentTransfer.amount, dec)
-      : rawAmt || '--';
-    const from = spentTransfer?.owner || (type === 'transfer_inscription' ? e.owner : '--');
-    const to = type === 'transfer' ? e.owner : e.owner || '--';
+  $('events-body').innerHTML = (data.rows || []).map(e => {
+    const qty = e.amount ? amount(e.amount, e.dec ?? 18) : (e.amount_text || '--');
+    const from = e.from || '--';
+    const to = e.to || '--';
     return `<tr>
       <td class="mono">${e.height}</td>
-      <td><span class="badge">${activityLabel(type)}</span></td>
-      <td>${tick ? tick.toUpperCase() : '--'}</td>
+      <td><span class="badge">${activityLabel(e.type)}</span></td>
+      <td>${e.tick ? e.tick.toUpperCase() : '--'}</td>
       <td>${qty}</td>
       <td><code title="${from}">${short(from)}</code></td>
       <td><code title="${to}">${short(to)}</code></td>
@@ -279,16 +229,16 @@ function renderEvents(data) {
       <td class="${e.valid ? 'ok' : 'bad'}">${e.valid ? '有效' : e.reason}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="8" class="empty">没有匹配的活动</td></tr>';
+  $('events-page-info').textContent = `${data.page}/${data.total_pages} · ${fmt.format(data.total)} 条`;
+  $('events-prev').disabled = data.page <= 1;
+  $('events-next').disabled = data.page >= data.total_pages;
 }
 
-function render(data) {
-  lastData = data;
-  const holders = buildHolderRows(data);
-  renderSummary(data, holders);
-  renderAnalysis(data, holders);
+function renderOverview(data) {
+  overviewData = data;
+  renderSummary(data);
+  renderAnalysis(data);
   renderTokens(data);
-  renderHolders(data, holders);
-  renderEvents(data);
 }
 
 function setPage(page) {
@@ -301,13 +251,40 @@ function setPage(page) {
   document.querySelectorAll('[data-page-target]').forEach(button => {
     button.classList.toggle('active', button.dataset.pageTarget === page);
   });
+  if (page === 'holders') loadHolders().catch(err => $('status').textContent = err.message);
+  if (page === 'events') loadEvents().catch(err => $('status').textContent = err.message);
 }
 
 async function refresh() {
-  $('status').textContent = '扫描中';
-  const data = await get('/api/scan');
-  render(data);
+  $('status').textContent = '加载中';
+  const data = await get('/api/overview');
+  renderOverview(data);
+  if (currentPage === 'holders') await loadHolders();
+  if (currentPage === 'events') await loadEvents();
   $('status').textContent = `最新 ${new Date().toLocaleTimeString()}`;
+}
+
+async function loadHolders(page = holderPage) {
+  holderPage = page;
+  $('holders-body').innerHTML = '<tr><td colspan="6" class="empty">加载中...</td></tr>';
+  const params = new URLSearchParams({
+    page: String(holderPage),
+    limit: String(PAGE_LIMIT),
+    q: $('holder-search').value.trim(),
+    sort: $('holder-sort').value,
+  });
+  renderHolders(await get(`/api/holders?${params}`));
+}
+
+async function loadEvents(page = eventPage) {
+  eventPage = page;
+  $('events-body').innerHTML = '<tr><td colspan="8" class="empty">加载中...</td></tr>';
+  const params = new URLSearchParams({
+    page: String(eventPage),
+    limit: String(PAGE_LIMIT),
+    filter: $('event-filter').value,
+  });
+  renderEvents(await get(`/api/events?${params}`));
 }
 
 $('refresh').onclick = () => refresh().catch(err => $('status').textContent = err.message);
@@ -543,9 +520,22 @@ $('command-only').addEventListener('click', () => {
   showCommandOnly();
 });
 
-$('holder-search').addEventListener('input', () => lastData && render(lastData));
-$('holder-sort').addEventListener('change', () => lastData && render(lastData));
-$('event-filter').addEventListener('change', () => lastData && render(lastData));
+$('holder-search').addEventListener('input', () => {
+  holderPage = 1;
+  loadHolders().catch(err => $('status').textContent = err.message);
+});
+$('holder-sort').addEventListener('change', () => {
+  holderPage = 1;
+  loadHolders().catch(err => $('status').textContent = err.message);
+});
+$('holders-prev').addEventListener('click', () => loadHolders(Math.max(1, holderPage - 1)).catch(err => $('status').textContent = err.message));
+$('holders-next').addEventListener('click', () => loadHolders(holderPage + 1).catch(err => $('status').textContent = err.message));
+$('event-filter').addEventListener('change', () => {
+  eventPage = 1;
+  loadEvents().catch(err => $('status').textContent = err.message);
+});
+$('events-prev').addEventListener('click', () => loadEvents(Math.max(1, eventPage - 1)).catch(err => $('status').textContent = err.message));
+$('events-next').addEventListener('click', () => loadEvents(eventPage + 1).catch(err => $('status').textContent = err.message));
 
 refresh().catch(err => $('status').textContent = err.message);
 setPage(currentPage);

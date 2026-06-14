@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const indexFile = process.env.BTCC20_INDEX_FILE || path.join(__dirname, 'data/index-state.json');
+let indexCache = null;
+let indexCacheMtimeMs = null;
 const config = {
   host: process.env.BTCC20_VIEWER_HOST || '127.0.0.1',
   port: Number(process.env.BTCC20_VIEWER_PORT || 8798),
@@ -129,7 +131,11 @@ async function getBlocksRange(startHeight, endHeight) {
 
 function readIndex() {
   try {
-    return JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+    const stat = fs.statSync(indexFile);
+    if (indexCache && indexCacheMtimeMs === stat.mtimeMs) return indexCache;
+    indexCache = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+    indexCacheMtimeMs = stat.mtimeMs;
+    return indexCache;
   } catch {
     return null;
   }
@@ -140,6 +146,8 @@ function writeIndex(data) {
   const tmp = `${indexFile}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
   fs.renameSync(tmp, indexFile);
+  indexCache = data;
+  indexCacheMtimeMs = fs.statSync(indexFile).mtimeMs;
 }
 
 const indexStatus = {
@@ -543,6 +551,158 @@ function clientState(state) {
   return normalizeAddresses(state);
 }
 
+function activityType(event) {
+  const op = event?.payload?.operation?.op || 'spend';
+  if (op === 'spend') return 'transfer';
+  if (op === 'transfer') return 'transfer_inscription';
+  return op;
+}
+
+function holderRows(state) {
+  const rows = [];
+  const ledger = state?.ledger || {};
+  for (const [tick, holders] of Object.entries(ledger.balances || {})) {
+    const token = ledger.tokens?.[tick] || {};
+    const dec = token.dec ?? 18;
+    for (const [address, balance] of Object.entries(holders || {})) {
+      const available = BigInt(balance.available || '0');
+      const transferable = BigInt(balance.transferable || '0');
+      const total = available + transferable;
+      rows.push({
+        tick,
+        address,
+        available: available.toString(),
+        transferable: transferable.toString(),
+        total: total.toString(),
+        dec,
+        minted: token.minted || '0',
+      });
+    }
+  }
+  return rows;
+}
+
+function tokenRows(state) {
+  const balances = state?.ledger?.balances || {};
+  return Object.values(state?.ledger?.tokens || {}).map(token => ({
+    ...token,
+    holder_count: Object.keys(balances[token.tick] || {}).length,
+  }));
+}
+
+function compareBigInt(left, right, dir) {
+  const a = BigInt(left || '0');
+  const b = BigInt(right || '0');
+  if (a === b) return 0;
+  return (a > b ? 1 : -1) * dir;
+}
+
+function pageParams(url, defaults = {}) {
+  const page = Math.max(1, Number.parseInt(url.searchParams.get('page') || defaults.page || '1', 10) || 1);
+  const limit = Math.max(1, Math.min(200, Number.parseInt(url.searchParams.get('limit') || defaults.limit || '50', 10) || 50));
+  return { page, limit, offset: (page - 1) * limit };
+}
+
+function paginate(rows, page, limit, offset) {
+  return {
+    page,
+    limit,
+    total: rows.length,
+    total_pages: Math.max(1, Math.ceil(rows.length / limit)),
+    rows: rows.slice(offset, offset + limit),
+  };
+}
+
+function overviewPayload(state) {
+  const events = state?.events || [];
+  const tokens = tokenRows(state);
+  const holders = holderRows(state);
+  const op_counts = events.reduce((acc, event) => {
+    const type = activityType(event);
+    acc[type] = (acc[type] || 0) + 1;
+    return acc;
+  }, {});
+  const invalid = events.filter(event => !event.valid);
+  return clientState({
+    start_height: state?.start_height ?? 0,
+    end_height: state?.end_height ?? -1,
+    tokens,
+    holder_count: holders.length,
+    event_count: events.length,
+    valid_event_count: events.filter(event => event.valid).length,
+    invalid_event_count: invalid.length,
+    latest_event: events.at(-1) || null,
+    first_invalid_reason: invalid[0]?.reason || null,
+    op_counts,
+    index: indexMeta(state, true),
+  });
+}
+
+function eventsPayload(state, url) {
+  const { page, limit, offset } = pageParams(url, { limit: 50 });
+  const filter = url.searchParams.get('filter') || 'all';
+  const ledger = state?.ledger || {};
+  const rows = [];
+  let total = 0;
+  const events = state?.events || [];
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    const matches = (() => {
+      if (filter === 'all') return true;
+      if (filter === 'invalid') return !event.valid;
+      return activityType(event) === filter;
+    })();
+    if (!matches) continue;
+
+    if (total >= offset && rows.length < limit) {
+      const op = event?.payload?.operation?.op || 'spend';
+      const type = activityType(event);
+      const spentTransfer = op === 'spend' ? ledger.transfers?.[event.inscription] : null;
+      const tick = event.payload?.operation?.tick || spentTransfer?.tick || '';
+      const token = tick ? ledger.tokens?.[tick] : null;
+      const rawAmt = event.payload?.operation?.amt || event.payload?.operation?.max || null;
+      rows.push({
+        height: event.height,
+        txid: event.txid,
+        inscription: event.inscription,
+        owner: event.owner,
+        valid: event.valid,
+        reason: event.reason,
+        type,
+        tick,
+        dec: token?.dec ?? 18,
+        amount: spentTransfer?.amount || null,
+        amount_text: spentTransfer ? null : rawAmt,
+        from: spentTransfer?.owner || (type === 'transfer_inscription' ? event.owner : null),
+        to: type === 'transfer' ? event.owner : event.owner || null,
+      });
+    }
+    total += 1;
+  }
+  return clientState({
+    filter,
+    page,
+    limit,
+    total,
+    total_pages: Math.max(1, Math.ceil(total / limit)),
+    rows,
+  });
+}
+
+function holdersPayload(state, url) {
+  const { page, limit, offset } = pageParams(url, { limit: 50 });
+  const query = String(url.searchParams.get('q') || '').trim().toLowerCase();
+  const [sortKey = 'total', dirText = 'desc'] = String(url.searchParams.get('sort') || 'total-desc').split('-');
+  const dir = dirText === 'asc' ? 1 : -1;
+  const rows = holderRows(state)
+    .filter(row => !query || row.tick.includes(query) || row.address.toLowerCase().includes(query))
+    .sort((a, b) => {
+      if (sortKey === 'address') return a.address.localeCompare(b.address) * dir;
+      return compareBigInt(a[sortKey], b[sortKey], dir) || a.address.localeCompare(b.address);
+    });
+  return clientState({ query, sort: `${sortKey}-${dirText}`, ...paginate(rows, page, limit, offset) });
+}
+
 async function updateIndex({ force = false } = {}) {
   let tip;
   try {
@@ -652,6 +812,23 @@ async function getIndex() {
   });
 }
 
+async function getIndexedState() {
+  let state = readIndex();
+  if (!state) {
+    await updateIndex({ force: true });
+    return readIndex();
+  }
+
+  const tip = await getTipHeight();
+  indexStatus.tip = tip;
+  indexStatus.last_checked_at = new Date().toISOString();
+  if (state.end_height < tip) {
+    await updateIndex();
+    state = readIndex() || state;
+  }
+  return state;
+}
+
 function startIndexer() {
   updateIndex().catch(error => {
     console.error(`BTCC-20 index update failed: ${error.message || error}`);
@@ -694,6 +871,18 @@ http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (url.pathname === '/api/scan') {
       return json(res, 200, url.searchParams.get('force') === '1' ? await updateIndex({ force: true }) : await getIndex());
+    }
+    if (url.pathname === '/api/overview') {
+      const state = await getIndexedState();
+      return json(res, 200, overviewPayload(state));
+    }
+    if (url.pathname === '/api/holders') {
+      const state = await getIndexedState();
+      return json(res, 200, holdersPayload(state, url));
+    }
+    if (url.pathname === '/api/events') {
+      const state = await getIndexedState();
+      return json(res, 200, eventsPayload(state, url));
     }
     if (url.pathname === '/api/index/status') {
       const state = readIndex();
